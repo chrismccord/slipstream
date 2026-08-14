@@ -12,14 +12,23 @@ defmodule Slipstream.Connection.Telemetry do
   """
   @doc since: "0.3.0"
   def span(initial_pipeline, func) do
-    metadata = %{
-      start_time: DateTime.utc_now(),
-      raw_message: initial_pipeline.raw_message,
-      start_state: initial_pipeline.state,
-      span_id: Slipstream.TelemetryHelper.id(),
-      connection_id: initial_pipeline.state.connection_id,
-      trace_id: initial_pipeline.state.trace_id
-    }
+    metadata =
+      %{
+        start_time: DateTime.utc_now(),
+        span_id: Slipstream.TelemetryHelper.id(),
+        connection_id: initial_pipeline.state.connection_id,
+        trace_id: initial_pipeline.state.trace_id
+      }
+      |> put_detail(
+        initial_pipeline.state,
+        :raw_message,
+        initial_pipeline.raw_message
+      )
+      |> put_detail(
+        initial_pipeline.state,
+        :start_state,
+        initial_pipeline.state
+      )
 
     finished_pipeline =
       :telemetry.span(
@@ -30,13 +39,31 @@ defmodule Slipstream.Connection.Telemetry do
 
           metadata =
             metadata
-            |> Map.merge(%{
-              message: finished_pipeline.message,
-              events: finished_pipeline.events,
-              end_state: finished_pipeline.state,
-              built_events: finished_pipeline.built_events,
-              return: finished_pipeline.return
-            })
+            |> put_detail(
+              finished_pipeline.state,
+              :message,
+              finished_pipeline.message
+            )
+            |> put_detail(
+              finished_pipeline.state,
+              :events,
+              finished_pipeline.events
+            )
+            |> put_detail(
+              finished_pipeline.state,
+              :end_state,
+              finished_pipeline.state
+            )
+            |> put_detail(
+              finished_pipeline.state,
+              :built_events,
+              finished_pipeline.built_events
+            )
+            |> put_detail(
+              finished_pipeline.state,
+              :return,
+              finished_pipeline.return
+            )
 
           {finished_pipeline, metadata}
         end
@@ -50,13 +77,14 @@ defmodule Slipstream.Connection.Telemetry do
   """
   @doc since: "0.3.0"
   def begin(%State{} = state) do
-    metadata = %{
-      start_time: DateTime.utc_now(),
-      start_time_monotonic: :erlang.monotonic_time(),
-      state: state,
-      connection_id: state.connection_id,
-      trace_id: state.trace_id
-    }
+    metadata =
+      %{
+        start_time: DateTime.utc_now(),
+        start_time_monotonic: :erlang.monotonic_time(),
+        connection_id: state.connection_id,
+        trace_id: state.trace_id
+      }
+      |> put_detail(state, :state, state)
 
     :telemetry.execute(
       [:slipstream, :connection, :connect, :start],
@@ -75,7 +103,7 @@ defmodule Slipstream.Connection.Telemetry do
     metadata =
       state.metadata
       |> Map.delete(:start_time_monotonic)
-      |> Map.put(:termination_reason, reason)
+      |> put_detail(state, :termination_reason, reason)
 
     :telemetry.execute(
       [:slipstream, :connection, :connect, :stop],
@@ -85,4 +113,15 @@ defmodule Slipstream.Connection.Telemetry do
       metadata
     )
   end
+
+  defp put_detail(
+         metadata,
+         %State{config: %{telemetry_metadata: :minimal}},
+         _key,
+         _value
+       ),
+       do: metadata
+
+  defp put_detail(metadata, _state, key, value),
+    do: Map.put(metadata, key, value)
 end

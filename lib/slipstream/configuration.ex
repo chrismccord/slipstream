@@ -87,6 +87,17 @@ defmodule Slipstream.Configuration do
       """,
       type: :boolean,
       default: false
+    ],
+    telemetry_metadata: [
+      doc: """
+      Controls the detail included in Slipstream telemetry metadata. `:full`
+      preserves the existing metadata. `:minimal` emits only operation names,
+      timing, and connection identifiers so request headers, channel payloads,
+      frames, callback arguments, and socket state cannot reach telemetry
+      handlers.
+      """,
+      type: {:in, [:full, :minimal]},
+      default: :full
     ]
   ]
 
@@ -134,6 +145,10 @@ defmodule Slipstream.Configuration do
   Can be connected to at `/socket/websocket`.
   """
 
+  if Version.match?(System.version(), ">= 1.8.0") do
+    @derive {Inspect, except: [:headers, :mint_opts]}
+  end
+
   defstruct Keyword.keys(@definition)
 
   @type t :: %__MODULE__{
@@ -143,7 +158,8 @@ defmodule Slipstream.Configuration do
           json_parser: module(),
           serializer: module(),
           reconnect_after_msec: [non_neg_integer()],
-          rejoin_after_msec: [non_neg_integer()]
+          rejoin_after_msec: [non_neg_integer()],
+          telemetry_metadata: :full | :minimal
         }
 
   @known_schemes ~w[ws wss]

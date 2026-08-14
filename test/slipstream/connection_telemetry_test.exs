@@ -83,5 +83,41 @@ defmodule Slipstream.ConnectionTelemetryTest do
 
       assert match?(%{message: event(%Events.ChannelConnected{})}, metadata)
     end
+
+    test "minimal telemetry excludes connection state and wire messages" do
+      secret = "provider-secret"
+
+      start_supervised!(
+        {@client,
+         pid: self(),
+         headers: [{"authorization", secret}],
+         telemetry_metadata: :minimal}
+      )
+
+      assert_receive {@client, :connected}
+
+      assert_receive {:telemetry, [:slipstream, :connection, :connect, :start],
+                      _, metadata}
+
+      refute Map.has_key?(metadata, :state)
+
+      assert_receive {:telemetry, [:slipstream, :connection, :handle, :stop], _,
+                      metadata}
+
+      refute Map.has_key?(metadata, :raw_message)
+      refute Map.has_key?(metadata, :start_state)
+      refute Map.has_key?(metadata, :end_state)
+      refute Map.has_key?(metadata, :message)
+      refute inspect(metadata) =~ secret
+
+      stop_supervised!(@client)
+
+      assert_receive {:telemetry, [:slipstream, :connection, :connect, :stop],
+                      _, metadata}
+
+      refute Map.has_key?(metadata, :state)
+      refute Map.has_key?(metadata, :termination_reason)
+      refute inspect(metadata) =~ secret
+    end
   end
 end

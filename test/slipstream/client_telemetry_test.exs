@@ -105,6 +105,63 @@ defmodule Slipstream.ClientTelemetryTest do
       assert metadata.callback == :handle_reply
       assert metadata.client == @client
     end
+
+    test "minimal telemetry excludes connection and channel payloads" do
+      secret = "provider-secret"
+
+      pid =
+        start_supervised!(
+          {@client,
+           pid: self(),
+           headers: [{"authorization", secret}],
+           telemetry_metadata: :minimal}
+        )
+
+      assert_receive {@client, :connected}
+
+      assert_receive {:telemetry, [:slipstream, :client, :connect, :start], _,
+                      metadata}
+
+      refute Map.has_key?(metadata, :configuration)
+      refute Map.has_key?(metadata, :socket)
+
+      assert_receive {:telemetry, [:slipstream, :client, :connect, :stop], _,
+                      metadata}
+
+      refute Map.has_key?(metadata, :configuration)
+      refute Map.has_key?(metadata, :response_headers)
+      refute Map.has_key?(metadata, :socket)
+
+      topic = "test:good"
+      join(pid, topic)
+      assert_receive {@client, :joined, ^topic, %{}}
+
+      assert_receive {:telemetry, [:slipstream, :client, :join, :start], _,
+                      metadata}
+
+      assert metadata.topic == topic
+      refute Map.has_key?(metadata, :params)
+      refute Map.has_key?(metadata, :socket)
+
+      assert_receive {:telemetry, [:slipstream, :client, :join, :stop], _,
+                      metadata}
+
+      refute Map.has_key?(metadata, :response)
+      refute Map.has_key?(metadata, :socket)
+
+      :ok = GenServer.cast(pid, {:push, topic, "ping", %{}})
+
+      assert_receive {@client, :received_reply, _ref,
+                      {:ok, %{"pong" => "pong"}}}
+
+      assert_receive {:telemetry, [:slipstream, :client, :handle_reply, :stop],
+                      _, metadata}
+
+      refute Map.has_key?(metadata, :arguments)
+      refute Map.has_key?(metadata, :return)
+      refute Map.has_key?(metadata, :socket)
+      refute inspect(metadata) =~ secret
+    end
   end
 
   defp join(pid, topic) do

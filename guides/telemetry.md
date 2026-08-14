@@ -3,6 +3,12 @@
 Slipstream emits telemetry events for both processes: the client process and
 the connection process.
 
+Clients that put credentials or other capabilities in connection headers or
+channel payloads can set `telemetry_metadata: :minimal`. Minimal mode retains
+event names, timing, topics, callback names, and connection identifiers while
+omitting headers, payloads, frames, callback arguments, callback returns, and
+socket or connection state.
+
 Telemetry for the connection process is very low-level: information about
 each message and before-and-after states for the connection. This telemetry
 aides in debugging failure-states of Slipstream and can be useful for

@@ -11,6 +11,11 @@ defmodule Slipstream.Connection.State do
   # the module which implements the Slipstream behaviour is hereby known
   # as the implementor
 
+  if Version.match?(System.version(), ">= 1.8.0") do
+    @derive {Inspect,
+             except: [:config, :conn, :websocket, :join_params, :joins, :leaves]}
+  end
+
   defstruct [
     :connection_id,
     :trace_id,

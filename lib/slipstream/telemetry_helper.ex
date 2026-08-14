@@ -25,12 +25,13 @@ defmodule Slipstream.TelemetryHelper do
   @doc since: "0.4.0"
   @spec begin_connect(Socket.t(), Slipstream.Configuration.t()) :: Socket.t()
   def begin_connect(socket, config) do
-    metadata = %{
-      start_time: DateTime.utc_now(),
-      start_time_monotonic: :erlang.monotonic_time(),
-      configuration: config,
-      socket: clean_socket(socket)
-    }
+    metadata =
+      %{
+        start_time: DateTime.utc_now(),
+        start_time_monotonic: :erlang.monotonic_time()
+      }
+      |> put_detail(config, :configuration, config)
+      |> put_detail(config, :socket, clean_socket(socket))
 
     :telemetry.execute(
       [:slipstream, :client, :connect, :start],
@@ -54,12 +55,12 @@ defmodule Slipstream.TelemetryHelper do
         event
       )
       when is_map(start_metadata) and map_size(start_metadata) > 0 do
+    config = socket.channel_config
+
     metadata =
       start_metadata
-      |> Map.merge(%{
-        response_headers: event.response_headers,
-        socket: clean_socket(socket)
-      })
+      |> put_detail(config, :response_headers, event.response_headers)
+      |> put_detail(config, :socket, clean_socket(socket))
       |> Map.delete(:start_time_monotonic)
 
     duration = :erlang.monotonic_time() - start_metadata.start_time_monotonic
@@ -97,13 +98,14 @@ defmodule Slipstream.TelemetryHelper do
           params :: Slipstream.json_serializable()
         ) :: Socket.t()
   def begin_join(socket, topic, params) do
-    metadata = %{
-      start_time: DateTime.utc_now(),
-      start_time_monotonic: :erlang.monotonic_time(),
-      socket: clean_socket(socket),
-      topic: topic,
-      params: params
-    }
+    metadata =
+      %{
+        start_time: DateTime.utc_now(),
+        start_time_monotonic: :erlang.monotonic_time(),
+        topic: topic
+      }
+      |> put_detail(socket.channel_config, :socket, clean_socket(socket))
+      |> put_detail(socket.channel_config, :params, params)
 
     :telemetry.execute(
       [:slipstream, :client, :join, :start],
@@ -127,10 +129,8 @@ defmodule Slipstream.TelemetryHelper do
       {:ok, start_metadata} ->
         metadata =
           start_metadata
-          |> Map.merge(%{
-            socket: clean_socket(socket),
-            response: event.response
-          })
+          |> put_detail(socket.channel_config, :socket, clean_socket(socket))
+          |> put_detail(socket.channel_config, :response, event.response)
           |> Map.delete(:start_time_monotonic)
 
         duration =
@@ -162,13 +162,16 @@ defmodule Slipstream.TelemetryHelper do
   """
   @doc since: "0.4.0"
   def wrap_dispatch(module, function, args, func) do
-    metadata = %{
-      client: module,
-      callback: function,
-      arguments: args,
-      socket: clean_socket(List.last(args)),
-      start_time: DateTime.utc_now()
-    }
+    socket = List.last(args)
+
+    metadata =
+      %{
+        client: module,
+        callback: function,
+        start_time: DateTime.utc_now()
+      }
+      |> put_detail(socket.channel_config, :arguments, args)
+      |> put_detail(socket.channel_config, :socket, clean_socket(socket))
 
     return_value =
       :telemetry.span(
@@ -178,9 +181,7 @@ defmodule Slipstream.TelemetryHelper do
           return = func.()
 
           metadata =
-            Map.merge(metadata, %{
-              return: return
-            })
+            put_detail(metadata, socket.channel_config, :return, return)
 
           {return, metadata}
         end
@@ -196,4 +197,15 @@ defmodule Slipstream.TelemetryHelper do
     # connection processes.
     %{socket | metadata: %{}}
   end
+
+  defp put_detail(
+         metadata,
+         %Slipstream.Configuration{telemetry_metadata: :minimal},
+         _key,
+         _value
+       ),
+       do: metadata
+
+  defp put_detail(metadata, _config, key, value),
+    do: Map.put(metadata, key, value)
 end
